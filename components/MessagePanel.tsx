@@ -6,7 +6,8 @@ import { useMessageStore } from '@/lib/stores/messages';
 import { useTodoStore } from '@/lib/stores/todos';
 import type { DingMessage } from '@/lib/types';
 
-const POLL_INTERVAL = 30_000;
+const POLL_INTERVAL = 15_000; // 15s for real-time feel
+const LOCAL_API = 'http://localhost:3847';
 
 export default function MessagePanel() {
   const { messages, selectedId, loading, load, addMessage, updateDraft, markSent, markSkipped, select } =
@@ -15,24 +16,42 @@ export default function MessagePanel() {
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; msg: DingMessage } | null>(null);
   const [sending, setSending] = useState<string | null>(null);
   const [filter, setFilter] = useState<'all' | 'new' | 'done'>('all');
+  const [isLocal, setIsLocal] = useState(false);
 
   useEffect(() => { load(); }, [load]);
+
+  // Check if local server is available
+  useEffect(() => {
+    fetch(`${LOCAL_API}/api/status`)
+      .then(r => r.ok ? setIsLocal(true) : setIsLocal(false))
+      .catch(() => setIsLocal(false));
+  }, []);
 
   useEffect(() => {
     async function fetchData() {
       try {
+        // Priority 1: local server (real-time)
+        if (isLocal) {
+          try {
+            const res = await fetch(`${LOCAL_API}/api/messages?t=${Date.now()}`);
+            if (res.ok) {
+              const data: DingMessage[] = await res.json();
+              for (const msg of data) await addMessage(msg);
+              return;
+            }
+          } catch {}
+        }
+        // Priority 2: static JSON (GitHub Pages / fallback)
         const res = await fetch('/data/messages.json?t=' + Date.now());
         if (!res.ok) return;
         const data: DingMessage[] = await res.json();
-        for (const msg of data) {
-          await addMessage(msg);
-        }
+        for (const msg of data) await addMessage(msg);
       } catch {}
     }
     fetchData();
     const timer = setInterval(fetchData, POLL_INTERVAL);
     return () => clearInterval(timer);
-  }, [addMessage]);
+  }, [addMessage, isLocal]);
 
   useEffect(() => {
     const close = () => setCtxMenu(null);
@@ -53,10 +72,10 @@ export default function MessagePanel() {
     setSending(msg.id);
     const cmd = `dws chat message send --user ${msg.senderUserId || msg.senderId} --text "${msg.draftReply.replace(/"/g, '\\"')}" --ai-tag`;
     try {
-      const res = await fetch('http://localhost:3847/api/send', {
+      const res = await fetch(`${LOCAL_API}/api/send`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: msg.senderUserId || msg.senderId, text: msg.draftReply }),
+        body: JSON.stringify({ userId: msg.senderUserId || msg.senderId, text: msg.draftReply, messageId: msg.id }),
       });
       if (res.ok) {
         markSent(msg.id, msg.draftReply);
@@ -101,18 +120,21 @@ export default function MessagePanel() {
               </span>
             )}
           </div>
-          <div className="flex">
-            {(['all', 'new', 'done'] as const).map((f) => (
-              <button
-                key={f}
-                onClick={() => setFilter(f)}
-                className={`text-[12px] px-2 py-0.5 rounded transition-colors ${
-                  filter === f ? 'text-text font-medium' : 'text-text-muted hover:text-text-secondary'
-                }`}
-              >
-                {f === 'all' ? '全部' : f === 'new' ? '待处理' : '已处理'}
-              </button>
-            ))}
+          <div className="flex items-center gap-2">
+            {isLocal && <span className="w-1.5 h-1.5 rounded-full bg-tag-sent" title="本地服务已连接" />}
+            <div className="flex">
+              {(['all', 'new', 'done'] as const).map((f) => (
+                <button
+                  key={f}
+                  onClick={() => setFilter(f)}
+                  className={`text-[12px] px-2 py-0.5 rounded transition-colors ${
+                    filter === f ? 'text-text font-medium' : 'text-text-muted hover:text-text-secondary'
+                  }`}
+                >
+                  {f === 'all' ? '全部' : f === 'new' ? '待处理' : '已处理'}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 

@@ -1,10 +1,12 @@
 const http = require('http');
-const { execFileSync, spawn } = require('child_process');
+const { execFileSync, spawn, execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
 const PORT = 3847;
 const DATA_FILE = path.join(__dirname, '../public/data/messages.json');
+const REPO_DIR = path.join(__dirname, '..');
+const PUSH_INTERVAL = 60_000; // Push to GitHub every 60s
 
 // Private chat contacts to monitor
 const CONTACTS = [
@@ -19,6 +21,8 @@ let allMessages = [];
 let knownMessageIds = new Set();
 let eventProcesses = [];
 const userIdCache = new Map();
+let pushTimer = null;
+let hasChanges = false;
 
 // ===== Data =====
 function loadMessages() {
@@ -32,6 +36,33 @@ function loadMessages() {
 function saveMessages() {
   fs.mkdirSync(path.dirname(DATA_FILE), { recursive: true });
   fs.writeFileSync(DATA_FILE, JSON.stringify(allMessages, null, 2));
+  hasChanges = true;
+  schedulePush();
+}
+
+// ===== Git push to GitHub =====
+function schedulePush() {
+  if (pushTimer) return; // Already scheduled
+  pushTimer = setTimeout(() => {
+    pushTimer = null;
+    if (!hasChanges) return;
+    pushToGitHub();
+    hasChanges = false;
+  }, PUSH_INTERVAL);
+}
+
+function pushToGitHub() {
+  try {
+    execSync('git add public/data/messages.json', { cwd: REPO_DIR, timeout: 5000 });
+    const status = execSync('git status --porcelain public/data/messages.json', { cwd: REPO_DIR, encoding: 'utf-8' });
+    if (!status.trim()) return; // No changes
+    
+    execSync(`git commit -m "data: update messages ${new Date().toLocaleTimeString('zh-CN')}"`, { cwd: REPO_DIR, timeout: 5000 });
+    execSync('git push', { cwd: REPO_DIR, timeout: 30000 });
+    console.log(`[sync] ✓ pushed messages to GitHub`);
+  } catch (err) {
+    console.log(`[sync] push failed: ${err.message?.slice(0, 100)}`);
+  }
 }
 
 // ===== Draft generation (based on digital twin skill) =====
@@ -229,13 +260,16 @@ for (const contact of validContacts) {
 server.listen(PORT, () => {
   console.log(`\n  工作站服务 http://localhost:${PORT}`);
   console.log(`  实时监听: ${validContacts.length} 个私聊`);
-  console.log(`  数据: ${DATA_FILE}\n`);
+  console.log(`  数据: ${DATA_FILE}`);
+  console.log(`  同步: 每 ${PUSH_INTERVAL / 1000}s 推送到 GitHub\n`);
 });
 
 // Graceful shutdown
 process.on('SIGTERM', () => {
   console.log('\n[shutdown] stopping listeners...');
   eventProcesses.forEach(p => p.kill('SIGTERM'));
+  // Push any pending changes before exit
+  if (hasChanges) pushToGitHub();
   server.close();
   process.exit(0);
 });
