@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { Send, SkipForward, ListTodo, MessageSquare, Bot, Check, ArrowUpRight } from 'lucide-react';
 import { useMessageStore } from '@/lib/stores/messages';
 import { useTodoStore } from '@/lib/stores/todos';
+import { matchQuickLinks } from '@/lib/quicklinks';
 import type { DingMessage } from '@/lib/types';
 
 const POLL_INTERVAL = 15_000; // 15s for real-time feel
@@ -158,8 +159,18 @@ export default function MessagePanel() {
                   </span>
                 </div>
                 <p className="text-[13px] text-text-secondary truncate leading-relaxed">{msg.content}</p>
-                <div className="flex items-center gap-1.5 mt-1.5">
+                <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
                   <StatusDot status={msg.status} />
+                  {matchQuickLinks(msg.content).map(link => (
+                    <span
+                      key={link.label}
+                      onClick={(e) => { e.stopPropagation(); window.open(link.url, '_blank'); }}
+                      className={`inline-flex items-center gap-0.5 text-[11px] px-1.5 py-0.5 rounded border cursor-pointer transition-colors ${link.color}`}
+                    >
+                      <ArrowUpRight size={10} />
+                      {link.label}
+                    </span>
+                  ))}
                   {msg.draftReply && msg.status !== 'sent' && (
                     <span className="text-[11px] text-text-muted truncate">
                       → {msg.draftReply.slice(0, 25)}
@@ -196,6 +207,22 @@ export default function MessagePanel() {
                 <div className="bg-bg-sidebar rounded-2xl rounded-tl-md px-4 py-3 border border-border-light">
                   <p className="text-[13px] leading-relaxed whitespace-pre-wrap">{selected.content}</p>
                 </div>
+
+                {/* 快捷链接按钮 */}
+                {matchQuickLinks(selected.content).length > 0 && (
+                  <div className="flex flex-wrap gap-2 mt-3">
+                    {matchQuickLinks(selected.content).map(link => (
+                      <button
+                        key={link.label}
+                        onClick={() => window.open(link.url, '_blank')}
+                        className={`inline-flex items-center gap-1.5 text-[12px] font-medium px-3 py-1.5 rounded-lg border transition-colors ${link.color}`}
+                      >
+                        <ArrowUpRight size={13} />
+                        打开{link.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* 回复区 */}
