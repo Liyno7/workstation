@@ -1,1 +1,36 @@
-[]
+[
+  {
+    "id": "msgVTzsVCQ+S0Ox2cGmCNiVbg==",
+    "senderId": "DoMQJYZiSPnC6u4mUHd5Dv6EiiXcuzc6DAJ",
+    "senderName": "刘佳琦",
+    "senderUserId": "03216624180020856619",
+    "content": "OK，我问问珠鹏",
+    "receivedAt": "2026-09-01T16:27:45",
+    "conversationId": "cidnpXEkV/dQ98vB/X/1BV3EqUMzctMLMWUrObiGkZ5Lws=",
+    "status": "sent",
+    "draftReply": "ok",
+    "sentReply": "好的"
+  },
+  {
+    "id": "msgMNz8Z0SuejTXt09ZQ7HEuw==",
+    "senderId": "DoMQJYZiSPnC6u4mUHd5Dv6EiiXcuzc6DAJ",
+    "senderName": "刘佳琦",
+    "senderUserId": "03216624180020856619",
+    "content": "咋现在都空了",
+    "receivedAt": "2026-09-01T16:22:52",
+    "conversationId": "cidnpXEkV/dQ98vB/X/1BV3EqUMzctMLMWUrObiGkZ5Lws=",
+    "status": "new",
+    "draftReply": "我这边也没了，不知道是权限关了还是说删掉了"
+  },
+  {
+    "id": "msg//z5ayvHbE2Ve/zKnSJ/Pw==",
+    "senderId": "DoMQJYZiSPnC6u4mUHd5Dv6EiiXcuzc6DAJ",
+    "senderName": "刘佳琦",
+    "senderUserId": "03216624180020856619",
+    "content": "[图片消息] 翔宇，在从语忆拿评论数据之前，评论分析是不是在原始协同上的",
+    "receivedAt": "2026-09-01T16:22:44",
+    "conversationId": "cidnpXEkV/dQ98vB/X/1BV3EqUMzctMLMWUrObiGkZ5Lws=",
+    "status": "new",
+    "draftReply": "最开始是源氏协同的，这个当初是手动导入进去分析的"
+  }
+]
