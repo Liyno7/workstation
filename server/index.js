@@ -158,6 +158,13 @@ function startContactListener(contact) {
 }
 
 // ===== Handle incoming message =====
+function notifyMac(title, body) {
+  try {
+    const esc = (s) => s.replace(/"/g, '\\"').replace(/\n/g, ' ');
+    execSync(`osascript -e 'display notification "${esc(body)}" with title "${esc(title)}" sound name "Glass"'`, { timeout: 3000 });
+  } catch {}
+}
+
 function handleIncoming(ev, contact) {
   const msgId = ev.openMessageId || ev.messageId || ev.id || '';
   const sender = ev.senderName || ev.senderNick || contact.name;
@@ -188,6 +195,7 @@ function handleIncoming(ev, contact) {
   saveMessages();
 
   console.log(`[msg] ✉ ${sender}: ${content.slice(0, 60)}`);
+  notifyMac(`钉钉 · ${sender}`, content.slice(0, 80));
 }
 
 // ===== HTTP Server =====
