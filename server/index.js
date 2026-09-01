@@ -4,22 +4,42 @@ const fs = require('fs');
 const path = require('path');
 
 const PORT = 3847;
+const DWS = path.join(process.env.HOME, '.local/bin/dws');
 const DATA_FILE = path.join(__dirname, '../public/data/messages.json');
 const REPO_DIR = path.join(__dirname, '..');
-const PUSH_INTERVAL = 60_000; // Push to GitHub every 60s
+const PUSH_INTERVAL = 60_000;
+const MY_USER_ID = '17851918508';
+const MY_DEPT_ID = '935820020'; // AI部
 
-// Private chat contacts to monitor
-const CONTACTS = [
-  { name: '刘佳琦', userId: '03216624180020856619' },
-  { name: '邵珠鹏', userId: '' },
-  { name: '陶子', userId: '' },
+// All contacts to monitor (department + extra)
+let CONTACTS = [
+  // AI部全员（除任翔宇）
+  { name: '赵汉桐', userId: '263161083635686748' },
   { name: '杜婧怡', userId: '474655553026170102' },
-  { name: '吴凡', userId: '' },
+  { name: '顾腾轩', userId: '661402041238579881' },
+  { name: '田永乐', userId: '01640436515229708872' },
+  { name: '朱浩然', userId: '15151846618' },
+  { name: '曹悦昕', userId: '01553721541726126056' },
+  { name: '杨曼玉', userId: '01602827406926286453' },
+  { name: '李龙', userId: '16577015227494403' },
+  { name: '程锦', userId: '0224172431351006715' },
+  { name: '余猛', userId: '2424556455659170' },
+  { name: '叶智勇', userId: '01172838596521490179' },
+  { name: '廖毅明', userId: '03236335466324212543' },
+  { name: '常译琪', userId: '682545150324318641' },
+  { name: '吴凡', userId: '2600674819689197' },
+  { name: '刘佳琦', userId: '03216624180020856619' },
+  // 额外指定
+  { name: '邵珠鹏', userId: '17854118106' },
+  { name: '陶子', userId: '0239693708061217434' },
+  { name: '刘月乐', userId: '020741623621034080' },
+  { name: '袁航', userId: '28001565471116617' },
+  { name: '张科峰', userId: '0313144924392799' },
 ];
 
 let allMessages = [];
 let knownMessageIds = new Set();
-let eventProcesses = [];
+let eventProcesses = new Map(); // name -> process
 const userIdCache = new Map();
 let pushTimer = null;
 let hasChanges = false;
@@ -42,7 +62,7 @@ function saveMessages() {
 
 // ===== Git push to GitHub =====
 function schedulePush() {
-  if (pushTimer) return; // Already scheduled
+  if (pushTimer) return;
   pushTimer = setTimeout(() => {
     pushTimer = null;
     if (!hasChanges) return;
@@ -55,8 +75,7 @@ function pushToGitHub() {
   try {
     execSync('git add public/data/messages.json', { cwd: REPO_DIR, timeout: 5000 });
     const status = execSync('git status --porcelain public/data/messages.json', { cwd: REPO_DIR, encoding: 'utf-8' });
-    if (!status.trim()) return; // No changes
-    
+    if (!status.trim()) return;
     execSync(`git commit -m "data: update messages ${new Date().toLocaleTimeString('zh-CN')}"`, { cwd: REPO_DIR, timeout: 5000 });
     execSync('git push', { cwd: REPO_DIR, timeout: 30000 });
     console.log(`[sync] ✓ pushed messages to GitHub`);
@@ -65,7 +84,7 @@ function pushToGitHub() {
   }
 }
 
-// ===== Draft generation (based on digital twin skill) =====
+// ===== Draft generation =====
 function generateDraft(content) {
   const c = content.toLowerCase();
   if (/哈喽|你好|hi|hello/.test(c) && content.length < 20) return '哈喽~';
@@ -84,7 +103,7 @@ function generateDraft(content) {
 function lookupUserId(name) {
   if (userIdCache.has(name)) return userIdCache.get(name);
   try {
-    const out = execFileSync('dws', ['contact', 'user', 'search', '--query', name, '--format', 'json'],
+    const out = execFileSync(DWS, ['contact', 'user', 'search', '--query', name, '--format', 'json'],
       { encoding: 'utf-8', timeout: 10000 });
     const userId = JSON.parse(out).result?.[0]?.userId || '';
     userIdCache.set(name, userId);
@@ -94,18 +113,19 @@ function lookupUserId(name) {
 
 // ===== Send via dws =====
 function sendViaDws(userId, text) {
-  execFileSync('dws', ['chat', 'message', 'send', '--user', userId, '--text', text, '--ai-tag'],
+  execFileSync(DWS, ['chat', 'message', 'send', '--user', userId, '--text', text, '--ai-tag'],
     { encoding: 'utf-8', timeout: 15000 });
 }
 
 // ===== Start event listener for one contact =====
 function startContactListener(contact) {
+  if (eventProcesses.has(contact.name)) return; // Already listening
+  if (!contact.userId) return;
+
   const args = ['event', 'consume', 'user_im_message_receive_o2o',
     '--user', contact.userId, '--flatten', '--format', 'ndjson'];
 
-  console.log(`[event] subscribing: ${contact.name} (${contact.userId})`);
-
-  const proc = spawn('dws', args, { stdio: ['ignore', 'pipe', 'pipe'] });
+  const proc = spawn(DWS, args, { stdio: ['ignore', 'pipe', 'pipe'] });
 
   proc.stdout.on('data', (chunk) => {
     for (const line of chunk.toString().split('\n').filter(Boolean)) {
@@ -118,24 +138,23 @@ function startContactListener(contact) {
 
   proc.stderr.on('data', (chunk) => {
     const msg = chunk.toString().trim();
-    // "ready" line means subscription is active
     if (msg.includes('ready')) {
-      console.log(`[event] ✓ ${contact.name} listening`);
-    } else if (msg.startsWith('{')) {
-      // JSON error - likely missing userId, skip silently
+      console.log(`[event] ✓ ${contact.name}`);
     }
   });
 
   proc.on('close', (code) => {
+    eventProcesses.delete(contact.name);
     console.log(`[event] ${contact.name} exited (${code}), restart in 5s`);
     setTimeout(() => startContactListener(contact), 5000);
   });
 
   proc.on('error', () => {
+    eventProcesses.delete(contact.name);
     setTimeout(() => startContactListener(contact), 5000);
   });
 
-  eventProcesses.push(proc);
+  eventProcesses.set(contact.name, proc);
 }
 
 // ===== Handle incoming message =====
@@ -144,7 +163,6 @@ function handleIncoming(ev, contact) {
   const sender = ev.senderName || ev.senderNick || contact.name;
   const content = ev.text || ev.content || '';
 
-  // Skip: own messages, empty, duplicates
   if (sender === '任翔宇' || !content || !msgId) return;
   if (knownMessageIds.has(msgId)) return;
 
@@ -166,7 +184,6 @@ function handleIncoming(ev, contact) {
   };
 
   allMessages.unshift(msg);
-  // Keep max 200 messages
   if (allMessages.length > 200) allMessages = allMessages.slice(0, 200);
   saveMessages();
 
@@ -191,10 +208,39 @@ const server = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({
       running: true,
-      listeners: eventProcesses.length,
+      listeners: eventProcesses.size,
+      contacts: CONTACTS.map(c => ({ name: c.name, userId: c.userId, listening: eventProcesses.has(c.name) })),
       messages: allMessages.length,
       newCount: allMessages.filter(m => m.status === 'new').length,
     }));
+    return;
+  }
+
+  // Add a new contact dynamically
+  if (req.method === 'POST' && req.url === '/api/add-contact') {
+    let body = '';
+    req.on('data', c => body += c);
+    req.on('end', () => {
+      try {
+        const { name, userId } = JSON.parse(body);
+        if (!name) throw new Error('missing name');
+        const resolvedUserId = userId || lookupUserId(name);
+        if (!resolvedUserId) throw new Error(`could not resolve ${name}`);
+        if (CONTACTS.find(c => c.name === name)) {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: true, existing: true }));
+          return;
+        }
+        const contact = { name, userId: resolvedUserId };
+        CONTACTS.push(contact);
+        startContactListener(contact);
+        console.log(`[contact] + ${name} (${resolvedUserId})`);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: true }));
+      } catch (err) {
+        res.writeHead(500); res.end(JSON.stringify({ error: err.message }));
+      }
+    });
     return;
   }
 
@@ -236,23 +282,11 @@ const server = http.createServer((req, res) => {
   res.writeHead(404); res.end('Not found');
 });
 
-// ===== Init: resolve missing userIds =====
-function resolveContacts() {
-  for (const c of CONTACTS) {
-    if (!c.userId) {
-      c.userId = lookupUserId(c.name);
-      if (c.userId) console.log(`[init] resolved ${c.name} → ${c.userId}`);
-      else console.log(`[init] ⚠ could not resolve ${c.name}`);
-    }
-  }
-}
-
 // ===== Start =====
 loadMessages();
-resolveContacts();
 
-// Start listeners for contacts with valid userId
 const validContacts = CONTACTS.filter(c => c.userId);
+console.log(`[init] starting ${validContacts.length} listeners...\n`);
 for (const contact of validContacts) {
   startContactListener(contact);
 }
@@ -268,7 +302,6 @@ server.listen(PORT, () => {
 process.on('SIGTERM', () => {
   console.log('\n[shutdown] stopping listeners...');
   eventProcesses.forEach(p => p.kill('SIGTERM'));
-  // Push any pending changes before exit
   if (hasChanges) pushToGitHub();
   server.close();
   process.exit(0);
